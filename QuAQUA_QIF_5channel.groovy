@@ -641,6 +641,8 @@ List<String> compartments = new ArrayList<String>(
                                             List.of('Nuclear',
                                                     'Tumor',
                                                     'Immune cells',
+                                                    'B cells',
+                                                    'CD8 T cells',
                                                     'Stroma',
 //                                                    'Target',
                                                     'Tissue',
@@ -658,11 +660,12 @@ List<String> rois = new ArrayList<String>(
                                         List.of('ROI')
                                                 );
 
+// List of (target name, channel) for all targets
 // Not ordered correctly, could initialize with loop and arrayList of Map.entries...
 // https://stackoverflow.com/questions/12184378/sorting-linkedhashmap
 List<Map.Entry<String, Integer>> targetEntries = new ArrayList<Map.Entry<String, Integer>>(
                                                         List.of(
-                                                        Map.entry('29D8', 1)
+                                                        Map.entry('PD-L1', 3),
                                                         )
                                                         );
 Map<String, Integer> targets = new LinkedHashMap<String, Integer>();
@@ -680,15 +683,6 @@ for (Map.Entry<String, Integer> entry : targetEntries) {
 // Select and clear current detections (compartments)
 removeObjects(getDetectionObjects(), true);
 
-// Select and clear current child object compartments for ROIs
-for (var annotation: getAnnotationObjects()){
-    if(rois.contains(annotation.getPathClass().toString())){
-        // Get children
-        children = annotation.getChildObjects()
-        removeObjects(children, false)
-    }
-}
-
 // Get the current image
 def server = getCurrentServer();
 server.getPixelCalibration().getAveragedPixelSizeMicrons();
@@ -701,23 +695,24 @@ for (int i = 0; i < serverChannels.size(); i++) {
 }
 
 // ~20x image
-setPixelSizeMicrons(0.4969, 0.4969);
+// setPixelSizeMicrons(0.4969, 0.4969);
 var plane = ImagePlane.getDefaultPlane()
 
 // Threshold each channel and generate masks for compartments
 //genThresholdMask(Object server, Object channels, double downsample, double blur_sigma, String method, double threshVal, String compartment, Boolean keepLargestOnly, double minPixels)
-//var targetDet = genThresholdMask(server, 1, 2, 0.5, 'auto_Huang', 0, 'Target', false, 30);
-var tumorDet = genThresholdMask(server, 2, 2, 0.5, 'auto_Huang', 0, 'Tumor', false, 30);
-var nuclearDet = genThresholdMask(server, 3, 2, 0, 'auto_Huang', 0, 'Nuclear', false, 15);
-//var targetDet = genThresholdMask(server, 1, 1, 1, 'auto_Huang', 0, 'Target', false, 100);
-//var tumorDet = genThresholdMask(server, 2, 1, 1, 'auto_Huang', 0, 'Tumor', false, 100);
-//var nuclearDet = genThresholdMask(server, 3, 1, 0.25, 'auto_Huang', 0, 'Nuclear', false, 60);
-//addObject(targetDet);
-addObject(tumorDet);
-addObject(nuclearDet);
+var nuclearDet = genThresholdMask(server, 1, 2, 0, 'auto_Otsu', 0, 'Nuclear', false, 15);
+var tumorDet = genThresholdMask(server, 2, 2, 0.5, 'auto_Otsu', 0, 'Tumor', false, 30);
+var bcellDet = genThresholdMask(server, 4, 2, 0.5, 'auto_Huang', 0, 'B cells', false, 30);
+var cd8Det = genThresholdMask(server, 5, 2, 0.5, 'auto_Otsu', 0, 'CD8 T cells', false, 30);
 
-int[] tissueChannels = [2, 3];
-var tissueDet = genThresholdMask(server, tissueChannels, 8, 1, 'auto_Percentile', 0, 'Tissue', false, 15);
+addObject(nuclearDet);
+addObject(tumorDet);
+addObject(bcellDet);
+addObject(cd8Det);
+
+// Everything except target
+int[] tissueChannels = [1, 2, 4];
+var tissueDet = genThresholdMask(server, tissueChannels, 4, 1, 'auto_Percentile', 0, 'Tissue', false, 15);
 addObject(tissueDet);
 
 //For next fill steps
@@ -775,55 +770,14 @@ addObject(stromaDet);
 // Add new pathClasses
 // https://forum.image.sc/t/how-to-delete-default-classes-with-groovy/58548
 
-//import qupath.lib.analysis.features.ObjectMeasurements;
-//def measurements = ObjectMeasurements.Measurements.values() as List;
-//def cellCompartments = ObjectMeasurements.Compartments.values() as List; // Won't mean much if they aren't cells...
-//def downsample = 1.0;
-//int targetChannel = 1;
-//String targetName = '29D8';
-
-//for (pathObj in getDetectionObjects()) {
-//  if (!compartments.contains(pathObj.getPathClass().toString())){
-//      continue;
-//  }
-//  getTargetAQUA(
-//      server, pathObj, downsample, targetChannel, targetName, measurements, cellCompartments, null, 0, false
-//      );
-//}
-
-//recalcCompartmentsAndAQUA(ImageServer<BufferedImage> server, 
-//                            List<String> ignoreClasses,
-//                            double downsample, 
-//                            Map<String, Integer> targets,
-//                            List<String> compartments,
-//                            Object metadata,
-//                            int scaleBitDepthTo,
-//                            Boolean microscopeNormalizedMeas
-//                            )
-
+def downsample = 1.0;
+def metadata = null;   
+int scaleBitDepthTo = 0;
+Boolean microscopeNormalizedMeas = false; 
 
 // Normalize AQUA? Exposure time, CC intensity, etc
 // Load metadata for image
 // .tma --> ? but could use Excel file from AQUAnalysis
-// 
-//def metadata = null;
-String filepath = 'E:/AQUA/HER2-V2/02-09-22/YTMA263-17-39_29D8_200/AQUA_20220210_202707/YTMA263-17-39_29D8_200.csv';
-String indexName = 'Spot #';
-dataframe = readCSVtoDF(filepath, indexName);
-// get image metadata based off of spot number in file
-var entry = getProjectEntry();
-imageName = entry.getImageName();
-spotNumber = Integer.parseInt(imageName.split('.tif')[0].split('_')[-1], 10).toString();
-println spotNumber;
-// get certain entries that will be useful for AQUAscore normalization
-metadata = dataframe.get(spotNumber)[15, 29, 31];
-println 'Metadata';
-println dataframe.get('Header')[15, 29, 31];
-println metadata;
-
-def downsample = 1.0;
-int scaleBitDepthTo = 0;
-Boolean microscopeNormalizedMeas = false; 
 
 // Recalculate AQUA scores after annotating ROIs or excluding regions
 
@@ -837,7 +791,7 @@ recalcCompartmentsAndAQUA(server,
                         metadata,
                         scaleBitDepthTo,
                         microscopeNormalizedMeas
-                        );
+                        )
 
 // Recalculate for each ROI
 
@@ -845,14 +799,14 @@ recalcCompartmentsAndAQUA(server,
 // Clear objects inside ROIs?
 
 getTargetAQUAScoresForROIs(server,
-                        rois, 
-                        targets,
-                        compartments,
-                        downsample,
-                        metadata,
-                        scaleBitDepthTo,
-                        microscopeNormalizedMeas
-                        );
+                       rois, 
+                       targets,
+                       compartments,
+                       downsample,
+                       metadata,
+                       scaleBitDepthTo,
+                       microscopeNormalizedMeas
+                       )
                         
 // Save AQUA scores for entire spot after exclude and each ROI 
 
