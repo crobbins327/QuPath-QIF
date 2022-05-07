@@ -8,7 +8,7 @@ import qupath.lib.objects.PathObject
 def project = getProject()
 def imagesToExport = project.getImageList()
 
-// Separate each measurement value in the output file with a tab ("\t")
+// Separate each measurement value in the output file with a comma (",")
 def separator = ","
 
 // Choose the columns that will be included in the export
